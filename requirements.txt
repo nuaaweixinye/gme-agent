@@ -1,0 +1,2 @@
+deepseek-harness-sdk==0.1.2a5
+deepseek-harness-runtime-bin==0.1.2a5

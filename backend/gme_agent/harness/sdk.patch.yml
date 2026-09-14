@@ -1,0 +1,22 @@
+# Trusted GME coding patch. The workspace-write sandbox stays rooted at the
+# job worktree (the runtime cwd), interactive approval is disabled because
+# the SDK protocol has no approval interaction channel, and the permission
+# preset table gets the matching gme-coding preset.
+
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+
+- id: approval
+  config:
+    policy: never
+
+- id: permission
+  config:
+    presets:
+      gme-coding:
+        sandbox: workspace-write
+        approval: never
+        name: gme-coding
+        description: Write inside the job worktree without interactive approval.
+    defaultPreset: gme-coding

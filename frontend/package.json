@@ -1,0 +1,67 @@
+{
+  "name": "gme-test-agent-web",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "electron:dev": "npm run build && electron .",
+    "electron:pack": "npm run build && electron-builder --dir --win --x64",
+    "electron:portable": "npm run build && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.21.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.0.3"
+  },
+  "build": {
+    "appId": "local.gme-test-agent",
+    "productName": "GME Test Agent",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend"
+      },
+      {
+        "from": "../backend-runtime",
+        "to": "backend-runtime"
+      },
+      {
+        "from": "../config.example.json",
+        "to": "config.example.json"
+      },
+      {
+        "from": "../skills",
+        "to": "skills"
+      }
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "GME 测试生成"
+  short_description: "系统枚举接口覆盖维度并迭代生成 GME/ACIS 测试"
+  default_prompt: "使用 $gme-test-generation 全面审查选中接口的契约、边界与实现分支，并迭代生成不重复的 GME vs ACIS 测试直到覆盖收敛。"

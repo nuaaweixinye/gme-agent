@@ -1,0 +1,4 @@
+interface:
+  display_name: "GME Bug Fix"
+  short_description: "Fix GME vs ACIS mismatches"
+  default_prompt: "Fix a failing GME vs ACIS comparison case in the target module repository."
