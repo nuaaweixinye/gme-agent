@@ -10,6 +10,9 @@ Set-Location $Root
 
 $PythonExe = Resolve-AgentPython -Python $Python
 Write-Host "Using Python: $PythonExe"
+# The pinned harness wheels are not on PyPI; install them from the release
+# before requirements.txt, which would otherwise fail to resolve them.
+Install-AgentHarnessWheels -Python $PythonExe
 & $PythonExe -m pip install -r (Join-Path $Root "requirements.txt")
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to install Python dependencies."

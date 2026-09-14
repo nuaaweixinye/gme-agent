@@ -9,6 +9,21 @@ GME Test Agent 是一个本地测试工作流工具，用于选择 GME 接口、
 - [源码运行使用说明](docs/源码运行使用说明.md)
 - [桌面版使用说明](docs/gme-test-agent使用说明.md)
 
+**快速开始（Windows）—— 一条命令完成环境准备：**
+
+```powershell
+git clone https://github.com/nuaaweixinye/gme-agent.git
+cd gme-agent
+scripts\install.ps1 -GmeRepo D:\GME     # 自检工具链 → 建 .venv → 装依赖 → 写 config.local.json → 打印后续步骤
+scripts\run_web.ps1                     # 启动后端
+```
+
+`install.ps1` 会检查 Python/Node/git/gh、创建 `.venv`、安装两个**不在 PyPI 上**的 DeepSeek Harness wheel（来自本仓库 [harness-sdk-0.1.2a5 release](https://github.com/nuaaweixinye/gme-agent/releases/tag/harness-sdk-0.1.2a5)，原因见 [docs/harness-sdk-wheels.md](docs/harness-sdk-wheels.md)）、写入 `config.local.json`、做一次安装校验，并在最后打印把 DeepSeek Harness 插件指向这份检出的两种做法（环境变量或 profile 补丁）。加 `-SkipFrontend` 可跳过前端依赖。
+
+自测：`scripts\run_tests.ps1`（未生成接口目录时会输出 `OK (skipped=7)`）。
+
+手动安装（不用脚本）时：
+
 激活任意兼容的 Python 环境后执行：
 
 ```powershell

@@ -1,2 +1,12 @@
+# The two DeepSeek Harness packages below are NOT on PyPI at these versions
+# (0.1.2a5 was never published; PyPI's 0.1.2 line starts at 0.1.2a3). They are
+# distributed from this repository's release instead:
+#
+#   https://github.com/nuaaweixinye/gme-agent/releases/tag/harness-sdk-0.1.2a5
+#
+# `scripts\install.ps1` installs them for you. Running a plain
+# `pip install -r requirements.txt` only succeeds once they are already
+# installed, because nothing on PyPI satisfies these pins.
+# Why not use a published version: docs/harness-sdk-wheels.md.
 deepseek-harness-sdk==0.1.2a5
 deepseek-harness-runtime-bin==0.1.2a5
