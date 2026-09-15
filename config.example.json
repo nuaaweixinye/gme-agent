@@ -28,5 +28,40 @@
   "build_command": "cmake --build {build_dir} --config Debug --target tests --parallel",
   "test_command": "{test_executable} --gtest_filter={gtest_filter} --gtest_output=xml:{gtest_xml_path}",
   "test_executable": "{build_dir}/Debug/tests.exe",
-  "gtest_xml_path": "{artifact_dir}/gtest.xml"
+  "gtest_xml_path": "{artifact_dir}/gtest.xml",
+  "knowledge": {
+    "enabled": false,
+    "weknora": {
+      "base_url": "http://<weknora-host>/api/v1",
+      "api_key_env": "WEKNORA_API_KEY",
+      "timeout_ms": 3000,
+      "knowledge_bases": [
+        {
+          "label": "kb00",
+          "id": "<kb00-knowledge-base-id>"
+        },
+        {
+          "label": "kb01",
+          "id": "<kb01-knowledge-base-id>"
+        },
+        {
+          "label": "kb02",
+          "id": "<kb02-knowledge-base-id>"
+        },
+        {
+          "label": "kb03",
+          "id": "<kb03-knowledge-base-id>"
+        }
+      ]
+    },
+    "budgets": {
+      "max_priors": 8,
+      "max_kb_hits": 6,
+      "max_chars": 4000
+    },
+    "closed_loop": {
+      "enabled": true,
+      "min_stable_runs": 2
+    }
+  }
 }

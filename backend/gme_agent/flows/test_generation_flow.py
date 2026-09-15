@@ -15,6 +15,8 @@ from ..git.diff import ensure_only_target_repo_changed
 from ..git.repositories import prepare_target_repo_from_remote, prepare_worktree_dependencies
 from ..git.worktree import create_worktree
 from ..interface_coverage import require_interface_coverage_artifacts
+from ..knowledge.injection import build_injection
+from ..knowledge.promote import promote_confirmed_failures
 from ..prompts import continue_test_generation_prompt, skip_known_failure_prompt, test_generation_prompt
 
 
@@ -69,12 +71,27 @@ def run_test_generation_job(
             )
 
         artifact_dir = ctx._artifact_dir(job_id)
+        selected_interfaces = list((selection or {}).get("interfaces") or [])
+        injection = build_injection(
+            ctx.config,
+            ctx.db,
+            module=module,
+            api_names=_knowledge_api_names(api_name, selected_interfaces),
+            interface_ids=[str(item.get("id") or "") for item in selected_interfaces],
+            symbols=[str(item.get("unique_symbol") or "") for item in selected_interfaces],
+            on_event=emit,
+        )
+        if injection.block:
+            (artifact_dir / "knowledge_context.md").write_text(injection.artifact_text, encoding="utf-8")
+        if injection.metadata.get("enabled"):
+            ctx.db.update_job(job_id, metadata=ctx._merge_metadata(job_id, {"knowledge": injection.metadata}))
         prompt = test_generation_prompt(
             module,
             api_name,
             target.rel_path,
             _build_validation_guidance(ctx, worktree.path, artifact_dir),
-            selected_interfaces=(selection or {}).get("interfaces") or [],
+            selected_interfaces=selected_interfaces,
+            knowledge_block=injection.block,
         )
         (artifact_dir / "test_generation_prompt.md").write_text(prompt, encoding="utf-8")
         emit("info", f"Wrote prompt artifact: {artifact_dir / 'test_generation_prompt.md'}")
@@ -123,6 +140,7 @@ def run_test_generation_job(
                 emit("info", "Generated test manifest is empty; skipping automatic test execution.")
             if failures:
                 emit("warn", f"Recorded {len(failures)} failing tests.")
+                _promote_recorded_failures(ctx, job_id, worktree.path, target.rel_path, failures)
                 if ctx.config.auto_apply_skips:
                     skip_prompt = skip_known_failure_prompt(
                         test_output,
@@ -203,12 +221,28 @@ def run_test_extension_job(
         target_repo = ctx._job_target_repo(job)
         artifact_dir = ctx._artifact_dir(job_id)
         previous_manifest = load_generated_tests_manifest(worktree, target_repo)
+        selected_interfaces = list((selection or {}).get("interfaces") or [])
+        resolved_api_name = api_name or str(job.get("api_name") or "")
+        injection = build_injection(
+            ctx.config,
+            ctx.db,
+            module=module,
+            api_names=_knowledge_api_names(resolved_api_name, selected_interfaces),
+            interface_ids=[str(item.get("id") or "") for item in selected_interfaces],
+            symbols=[str(item.get("unique_symbol") or "") for item in selected_interfaces],
+            on_event=emit,
+        )
+        if injection.block:
+            (artifact_dir / "knowledge_context.md").write_text(injection.artifact_text, encoding="utf-8")
+        if injection.metadata.get("enabled"):
+            ctx.db.update_job(job_id, metadata=ctx._merge_metadata(job_id, {"knowledge": injection.metadata}))
         prompt = continue_test_generation_prompt(
             module,
-            api_name or str(job.get("api_name") or ""),
+            resolved_api_name,
             target_repo,
             _build_validation_guidance(ctx, worktree, artifact_dir),
-            selected_interfaces=(selection or {}).get("interfaces") or [],
+            selected_interfaces=selected_interfaces,
+            knowledge_block=injection.block,
         )
         if retry_context:
             prompt = f"{retry_context.strip()}\n\n{prompt}"
@@ -265,7 +299,8 @@ def run_test_extension_job(
             gtest_filter = generated_metadata.get("generated_gtest_filter") or ""
             if gtest_filter:
                 test_output = ctx._run_tests(job_id, worktree, gtest_filter)
-                ctx._record_failures(job_id, test_output, gtest_filter, artifact_dir=artifact_dir)
+                failures = ctx._record_failures(job_id, test_output, gtest_filter, artifact_dir=artifact_dir)
+                _promote_recorded_failures(ctx, job_id, worktree, target_repo, failures)
             else:
                 emit("info", "Generated test manifest is empty; skipping automatic test execution.")
 
@@ -354,3 +389,46 @@ def _build_validation_guidance(ctx, worktree: Path, artifact_dir: Path) -> str:
   `cmake --build "{memory_audit_build_dir}" --config Release --target tests -- /p:TrackFileAccess=false`
 - 必须把准确 filter 展开为单条测试，在独立工作目录逐条运行 `"{memory_audit_build_dir / "Release" / "tests.exe"}" --gtest_filter=<exact-single-test>`，并且无论 GTest 退出码是否为零都继续读取对应工作目录中的 `gme_mmgr.1.log`。只有 `Leaks: 0` 且 `Bad delete pointers: 0` 才算内存审计通过。
 - 这些命令是本任务的权威命令。若命令因生成测试代码失败，必须在最终回复前修复或删除对应生成测试。"""
+
+
+def _knowledge_api_names(api_name: str, selected_interfaces: list[dict]) -> list[str]:
+    names = [str(api_name or "")]
+    names.extend(str(item.get("api") or "") for item in selected_interfaces)
+    names.extend(str(item.get("unique_symbol") or "") for item in selected_interfaces)
+    return [name for name in dict.fromkeys(names) if name.strip()]
+
+
+def _promote_recorded_failures(ctx, job_id: str, worktree: Path, target_repo: str, failures: list[dict]) -> None:
+    settings = ctx.config.knowledge
+    if not (settings.enabled and settings.closed_loop.enabled and failures):
+        return
+    emit = ctx._job_emit(job_id)
+    try:
+        manifest = load_generated_tests_manifest(worktree, target_repo)
+    except Exception as exc:
+        _safe_warn(emit, f"knowledge/promotion-skipped manifest unreadable: {exc}")
+        return
+    try:
+        promote_confirmed_failures(
+            ctx.db,
+            failures=failures,
+            manifest=manifest,
+            min_stable_runs=settings.closed_loop.min_stable_runs,
+            on_event=emit,
+        )
+    except Exception as exc:
+        _safe_warn(emit, f"knowledge/promotion-failed {type(exc).__name__}: {exc}")
+
+
+def _safe_warn(emit, message: str) -> None:
+    """Warn without letting a broken job-event writer fail the task.
+
+    The wrapper exists so a promotion problem never fails the task; an emitter that
+    raises inside the `except` branch would undo exactly that, and the flow's caller
+    would mark a finished task failed.
+    """
+
+    try:
+        emit("warn", message)
+    except Exception:
+        pass

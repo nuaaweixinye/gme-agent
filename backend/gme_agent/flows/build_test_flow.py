@@ -95,6 +95,25 @@ def run_tests(
     return output
 
 
+def _manifest_attribution(manifest_test: dict) -> dict[str, str]:
+    """Attribution keys a manifest entry actually declares, omitting the ones it does not.
+
+    `upsert_failure` merges the incoming metadata over the stored blob, so writing an
+    explicit `""` for a field the manifest merely omits is not "no attribution": it is an
+    assertion that erases attribution an earlier observation established. That loss is
+    invisible until the knowledge closed loop refuses to promote a divergence whose
+    `metadata_json` no longer carries `interface_id`/`api_name` — a hard condition of
+    promotion. A manifest that does not name the field therefore says nothing about it.
+    """
+
+    attribution: dict[str, str] = {}
+    for key, source in (("interface_id", "interface_id"), ("api_name", "api")):
+        value = str(manifest_test.get(source) or "").strip()
+        if value:
+            attribution[key] = value
+    return attribution
+
+
 def record_failures(ctx, job_id: str, test_output: str, gtest_filter: str, *, artifact_dir: Path) -> list[dict]:
     parsed = merge_failures(parse_gtest_xml(ctx._gtest_xml_path(artifact_dir)), parse_gtest_failures(test_output))
     failures = []
@@ -124,6 +143,7 @@ def record_failures(ctx, job_id: str, test_output: str, gtest_filter: str, *, ar
     for item in parsed:
         test_key = (str(item.get("test_suite") or ""), str(item.get("test_name") or ""))
         manifest_test = manifest_by_test.get(test_key) or {}
+        attribution = _manifest_attribution(manifest_test)
         failure_id = f"gmefail-{uuid.uuid4().hex[:10]}"
         failure = ctx.db.upsert_failure(
             failure_id=failure_id,
@@ -139,8 +159,7 @@ def record_failures(ctx, job_id: str, test_output: str, gtest_filter: str, *, ar
                 "gtest_filter": gtest_filter,
                 "module": job.get("module") or "",
                 "target_repo": ctx._job_target_repo(job),
-                "api_name": str(manifest_test.get("api") or ""),
-                "interface_id": str(manifest_test.get("interface_id") or ""),
+                **attribution,
             },
         )
         ctx.db.add_failure_observation(

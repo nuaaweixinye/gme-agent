@@ -672,6 +672,76 @@ Expected equality of these values:
             finally:
                 db.close()
 
+    def test_record_failures_keeps_attribution_a_manifest_does_not_restate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "worktree"
+            notes = worktree / ".gme-agent"
+            notes.mkdir(parents=True)
+            (notes / "generated_tests.json").write_text(
+                '{"tests": [{"file": "src/laws/law_base_test.cpp", "suite": "Laws_BaseTest", "name": "GeneratedCase"}]}',
+                encoding="utf-8",
+            )
+            cfg = AgentConfig(
+                artifact_root=str(root / "artifacts"),
+                database_path=str(root / "agent.db"),
+                test_target_repo="tests/gme",
+            )
+            db = AgentDb(cfg.database_path)
+            try:
+                job = db.create_job(
+                    job_id="job-1",
+                    job_type="test_generation",
+                    title="Generate laws tests",
+                    module="laws",
+                    metadata={"target_repo": "tests/gme"},
+                )
+                db.update_job(job["id"], worktree_path=str(worktree))
+                orchestrator = Orchestrator(cfg, db)
+                artifact_dir = orchestrator._artifact_dir(job["id"])
+                output = """
+D:/repo/tests/gme/src/laws/law_base_test.cpp:42: Failure
+Expected equality of these values:
+[  FAILED  ] Laws_BaseTest.GeneratedCase (1 ms)
+"""
+                seeded = db.upsert_failure(
+                    failure_id="gmefail-1",
+                    job_id=job["id"],
+                    test_suite="Laws_BaseTest",
+                    test_name="GeneratedCase",
+                    metadata={"interface_id": "laws-evaluate", "api_name": "GME::evaluate"},
+                )
+
+                recorded = record_failures(
+                    orchestrator,
+                    job["id"],
+                    output,
+                    "Laws_BaseTest.GeneratedCase",
+                    artifact_dir=artifact_dir,
+                )
+
+                self.assertEqual(recorded[0]["id"], seeded["id"])
+                self.assertEqual(recorded[0]["metadata"]["interface_id"], "laws-evaluate")
+                self.assertEqual(recorded[0]["metadata"]["api_name"], "GME::evaluate")
+
+                (notes / "generated_tests.json").write_text(
+                    '{"tests": [{"file": "src/laws/law_base_test.cpp", "suite": "Laws_BaseTest",'
+                    ' "name": "GeneratedCase", "interface_id": "laws-derivative", "api": "GME::derivative"}]}',
+                    encoding="utf-8",
+                )
+                restated = record_failures(
+                    orchestrator,
+                    job["id"],
+                    output,
+                    "Laws_BaseTest.GeneratedCase",
+                    artifact_dir=artifact_dir,
+                )
+
+                self.assertEqual(restated[0]["metadata"]["interface_id"], "laws-derivative")
+                self.assertEqual(restated[0]["metadata"]["api_name"], "GME::derivative")
+            finally:
+                db.close()
+
     def test_record_failures_resolves_only_open_tests_reported_as_not_failed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1693,6 +1763,61 @@ TEST_F(Suite, CurrentOnly) {
         self.assertIn("fixture `Laws_BaseTest`", prompt)
         self.assertIn("只修改结构化选择中列出的现有 `.cpp` 文件", prompt)
         self.assertNotIn("共生成 4 个新测试", prompt)
+
+    def test_generation_prompt_without_knowledge_matches_pre_change_output(self) -> None:
+        fixtures = Path(__file__).resolve().parent / "fixtures"
+
+        plain = test_generation_prompt("laws", "api_ndifferentiate_law", "tests/gme")
+        self.assertEqual(plain, (fixtures / "generation_prompt_plain.txt").read_text(encoding="utf-8"))
+
+        selected = [
+            {
+                "id": "laws.api-make-cubic.abc",
+                "unique_symbol": "outcome api_make_cubic(double, double, double, double, double, double, law *&)",
+                "target_file": "tests/gme/src/laws/kernel_kernapi_test.cpp",
+                "test_suite": "Laws_KernapiTest",
+            }
+        ]
+        build_guidance = (
+            "Build validation commands from the GME Test Agent settings:\n"
+            "- Build:\n"
+            "  `custom-build-command`"
+        )
+        with_selection = test_generation_prompt(
+            "laws",
+            "selected interfaces",
+            "tests/gme",
+            build_guidance,
+            selected_interfaces=selected,
+        )
+        self.assertEqual(
+            with_selection,
+            (fixtures / "generation_prompt_selected.txt").read_text(encoding="utf-8"),
+        )
+
+    def test_generation_prompt_inserts_the_knowledge_block_before_the_closure_loop(self) -> None:
+        block = "## 历史分歧与知识参照（GME Test Agent 自动注入）\n\n### 本地分歧先验（source=local）\n1. `Laws_ClassTest.T1`"
+
+        baseline = test_generation_prompt("laws", "api_x", "tests/gme")
+        continued_baseline = continue_test_generation_prompt("laws", "api_x", "tests/gme")
+        injected = test_generation_prompt("laws", "api_x", "tests/gme", knowledge_block=block)
+        continued = continue_test_generation_prompt("laws", "api_x", "tests/gme", knowledge_block=block)
+
+        for text, base in ((injected, baseline), (continued, continued_baseline)):
+            self.assertIn(block, text)
+            self.assertLess(text.index(block), text.index("必须按以下闭环执行："))
+            self.assertGreater(text.index(block), text.index("结构化接口选择"))
+            self.assertEqual(text.replace(f"{block}\n\n", "", 1), base)
+
+    def test_generation_prompt_ignores_a_blank_knowledge_block(self) -> None:
+        baseline = test_generation_prompt("laws", "api_x", "tests/gme")
+        continued_baseline = continue_test_generation_prompt("laws", "api_x", "tests/gme")
+
+        self.assertEqual(test_generation_prompt("laws", "api_x", "tests/gme", knowledge_block="   \n"), baseline)
+        self.assertEqual(
+            continue_test_generation_prompt("laws", "api_x", "tests/gme", knowledge_block=""),
+            continued_baseline,
+        )
 
     def test_generated_tests_manifest_normalizes_files_and_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
