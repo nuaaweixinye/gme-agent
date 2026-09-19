@@ -21,6 +21,14 @@ DEFAULT_CONFIGURE_COMMAND = (
 )
 
 
+# The formatter GME's own `check-format` target runs: its CI installs
+# `clang-format==17.0.2` (.github/workflows/format_check.yml) before building that
+# target. clang-format judges the same source differently across major versions, so
+# a backend that trusted whatever happened to be on PATH could report "the format
+# check passed" for source the GME pipeline then rejects.
+GME_CLANG_FORMAT_VERSION = "17.0.2"
+
+
 DEFAULT_KNOWLEDGE_BASES: tuple[dict[str, str], ...] = (
     {"label": "kb00", "id": "<kb00-knowledge-base-id>"},
     {"label": "kb01", "id": "<kb01-knowledge-base-id>"},
@@ -195,6 +203,8 @@ class AgentConfig:
     test_command: str = "{test_executable} --gtest_filter={gtest_filter} --gtest_output=xml:{gtest_xml_path}"
     test_executable: str = "{build_dir}/Debug/tests.exe"
     gtest_xml_path: str = "{artifact_dir}/gtest.xml"
+    clang_format_path: str = ""
+    allow_clang_format_version_mismatch: bool = False
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
 
     def resolved(self) -> "AgentConfig":

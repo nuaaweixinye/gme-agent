@@ -115,6 +115,7 @@ def run_bug_fix_pr_job(ctx, job_id: str) -> None:
             changed_files,
             artifact_dir,
             emit,
+            config=ctx.config,
         )
         ctx._run_configure_and_build(job_id, verification.path)
         after = ctx._run_tests(

@@ -40,6 +40,7 @@ from gme_agent.execution.runner import (
     parse_gtest_xml,
     resolve_command_executable,
 )
+from gme_agent.execution.clang_format import ResolvedClangFormat
 from gme_agent.flows.memory_audit_flow import _audit_single_test, _parse_gtest_list, _summarize_results, run_selected_memory_audit
 from gme_agent.flows.skip_pr_flow import (
     SelectedTestBlock,
@@ -1340,11 +1341,15 @@ TEST_F(Suite, GeneratedB) {
             (module / "fix.cpp").write_text("int fixed();\n", encoding="utf-8")
             (module / "notes.txt").write_text("notes\n", encoding="utf-8")
             completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
-            version = subprocess.CompletedProcess([], 0, stdout="clang-format version 17.0.2\n", stderr="")
 
-            with mock.patch("gme_agent.flows.bug_fix_flow.shutil.which", return_value="clang-format"), mock.patch(
+            with mock.patch(
+                "gme_agent.flows.bug_fix_flow.resolve_clang_format",
+                return_value=ResolvedClangFormat(
+                    path="clang-format", version="17.0.2", matches_gme=True
+                ),
+            ), mock.patch(
                 "gme_agent.flows.bug_fix_flow.subprocess.run",
-                side_effect=[completed, version],
+                return_value=completed,
             ) as run:
                 summary = _run_fix_format_check(
                     worktree,
@@ -1352,6 +1357,7 @@ TEST_F(Suite, GeneratedB) {
                     ["fix.cpp", "notes.txt"],
                     artifact_dir,
                     lambda _level, _message: None,
+                    config=AgentConfig(),
                 )
 
             self.assertEqual(summary["files"], ["fix.cpp"])
@@ -2658,9 +2664,14 @@ TEST_F(LawsTest, ExistingAfter) {
             target.mkdir()
             (worktree / ".clang-format").write_text("BasedOnStyle: Google\n", encoding="utf-8")
 
-            with mock.patch("gme_agent.flows.skip_pr_flow.shutil.which", return_value="clang-format"):
+            with mock.patch(
+                "gme_agent.flows.skip_pr_flow.resolve_clang_format",
+                return_value=ResolvedClangFormat(path="clang-format", version="17.0.2", matches_gme=True),
+            ):
                 with mock.patch("gme_agent.flows.skip_pr_flow.subprocess.run", side_effect=fake_run):
-                    _format_generated_tests(worktree, target, ["src/laws/test.cpp"], lambda _level, _message: None)
+                    _format_generated_tests(
+                        worktree, target, ["src/laws/test.cpp"], lambda _level, _message: None, config=AgentConfig()
+                    )
 
         cmd = captured["cmd"]
         self.assertIsInstance(cmd, list)

@@ -10,3 +10,7 @@
 # Why not use a published version: docs/harness-sdk-wheels.md.
 deepseek-harness-sdk==0.1.2a5
 deepseek-harness-runtime-bin==0.1.2a5
+# The formatter GME's own check-format target runs; the backend's repair and
+# skip-PR gates refuse a different version. Installing it here puts the pinned
+# binary in the environment the backend resolves first.
+clang-format==17.0.2

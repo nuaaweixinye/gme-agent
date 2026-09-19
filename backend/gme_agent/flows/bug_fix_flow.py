@@ -7,6 +7,7 @@ import shutil
 import subprocess
 
 from ..harness.runner import HarnessRunner
+from ..execution.clang_format import describe_version_mismatch, resolve_clang_format
 from ..generated_tests import load_generated_tests_manifest
 from ..git.diff import git_diff, git_status
 from ..git.repositories import (
@@ -231,6 +232,7 @@ def run_fix_job(ctx, job_id: str, failures: list[dict[str, Any]] | dict[str, Any
             changed_module_files,
             artifact_dir,
             emit,
+            config=ctx.config,
         )
         ctx.db.update_job(
             job_id,
@@ -567,6 +569,8 @@ def _run_fix_format_check(
     changed_files: list[str],
     artifact_dir: Path,
     emit,
+    *,
+    config,
 ) -> dict[str, Any]:
     format_files = [
         path
@@ -580,9 +584,11 @@ def _run_fix_format_check(
         emit("info", message)
         return {"status": "passed", "files": []}
 
-    clang_format = shutil.which("clang-format")
-    if clang_format is None:
-        raise RuntimeError("clang-format was not found on PATH; cannot validate the bug-fix format.")
+    resolved = resolve_clang_format(config)
+    if not resolved.matches_gme:
+        emit("warn", describe_version_mismatch(resolved))
+    clang_format = resolved.path
+    version = f"clang-format version {resolved.version}" if resolved.version else "clang-format version unknown"
 
     style_file = worktree / ".clang-format"
     style = f"file:{style_file}" if style_file.exists() else "file"
@@ -597,20 +603,12 @@ def _run_fix_format_check(
         errors="replace",
         check=False,
     )
-    version = subprocess.run(
-        [clang_format, "--version"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    ).stdout.strip()
     output = "\n".join(part.strip() for part in (version, completed.stdout, completed.stderr) if part.strip())
     output_path.write_text(output or "clang-format check passed.", encoding="utf-8")
     if completed.returncode != 0:
         raise RuntimeError(f"clang-format validation failed.\n{output[-4000:]}")
-    emit("info", f"clang-format validation passed for {len(format_files)} changed files.")
-    return {"status": "passed", "files": format_files, "version": version}
+    emit("info", f"clang-format validation passed for {len(format_files)} changed files ({version}).")
+    return {"status": "passed", "files": format_files, "version": version, "path": clang_format}
 
 
 def _require_full_tests_pass(output: str) -> int:

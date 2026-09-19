@@ -8,8 +8,9 @@ import importlib.util
 import shutil
 import subprocess
 
+from ..execution.clang_format import inspect_clang_format_candidates
 from ..runtime import skill_root
-from .config import AgentConfig
+from .config import GME_CLANG_FORMAT_VERSION, AgentConfig
 
 
 KNOWN_PLACEHOLDERS = {
@@ -58,9 +59,22 @@ def validate_config(config: AgentConfig) -> dict:
     add("Worktree root parent exists", worktree_root.parent.exists(), str(worktree_root.parent))
     add("Artifact root parent exists", artifact_root.parent.exists(), str(artifact_root.parent))
 
-    for tool in ("git", "cmake", "clang-format"):
+    for tool in ("git", "cmake"):
         found = shutil.which(tool)
         add(f"Tool on PATH: {tool}", bool(found), found or "not found")
+
+    # clang-format is judged by version, not mere presence: the repair and skip-PR
+    # gates must run the same formatter GME's own check-format target runs.
+    candidates = inspect_clang_format_candidates(config)
+    matching = next((item for item in candidates if item.version == GME_CLANG_FORMAT_VERSION), None)
+    described = "; ".join(
+        f"{item.origin}: {item.path} ({item.version or 'unknown version'})" for item in candidates
+    ) or f"not found; install with python -m pip install clang-format=={GME_CLANG_FORMAT_VERSION}"
+    add(
+        f"clang-format {GME_CLANG_FORMAT_VERSION} (GME's check-format version)",
+        matching is not None or bool(config.allow_clang_format_version_mismatch),
+        described,
+    )
 
     add("Harness provider configured", bool(str(config.provider).strip()), config.provider)
     add("Harness model configured", bool(str(config.model).strip()), config.model)

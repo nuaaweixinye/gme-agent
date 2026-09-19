@@ -168,7 +168,7 @@ queued → creating_worktree → running_agent → (building) → running_tests
 | 构建 | `configure_command` 与 `build_command` 必须成功（模板占位符由后端渲染） | `build_test_flow.py::run_configure_and_build` |
 | 测试 | 必须用 manifest 给出的精确 filter 跑本轮全部新增测试；只构建通过不算完成 | `build_test_flow.py::run_tests` |
 | 内存审计 | 每条用例在独立 Release 目录逐条跑，`Leaks: 0` 且 `Bad delete pointers: 0` 才算通过（`not_applicable` 允许） | `memory_audit_flow.py` |
-| 修复格式 | clang-format 检查（修复源码时） | `bug_fix_flow.py::_run_fix_format_check` |
+| 修复格式 | clang-format 检查（修复源码时），且必须用 **GME 自己的 check-format 目标所用的版本 17.0.2**——跨大版本判决会不一致 | `bug_fix_flow.py::_run_fix_format_check` + `execution/clang_format.py::resolve_clang_format` |
 | 修复完整性 | 修复任务的测试必须全绿 + 内存审计通过才能开 PR | `_require_full_tests_pass` / `_require_memory_audit_pass` |
 
 ## 8. 工件布局
@@ -216,6 +216,7 @@ queued → creating_worktree → running_agent → (building) → running_tests
 | 生成行为 | `initialize_submodules` / `test_target_repo` / `module_repo_root` / `pr_strategy` / `use_builtin_skills` / `test_generation_skill` / `bug_fix_skill` |
 | 自动步骤 | `auto_run_build` / `auto_run_tests` / `auto_apply_skips` / `auto_rerun_after_skip` / `auto_create_pr`（默认全部 `false`：默认每一步都等你确认） |
 | 命令模板 | `configure_command` / `build_command` / `test_command` / `test_executable` / `gtest_xml_path` |
+| 格式工具 | `clang_format_path`（留空=按"解释器环境 → 该路径 → PATH"解析）/ `allow_clang_format_version_mismatch`（默认 `false`；打开后版本不符只警告，见 §7） |
 | 知识注入 | `knowledge{enabled, weknora{base_url, api_key_env, timeout_ms, knowledge_bases[{label,id}]}, budgets{max_priors, max_kb_hits, max_chars}, closed_loop{enabled, min_stable_runs}}` |
 
 命令模板可用占位符（未知占位符会被 `/api/validate` 报错）：`{worktree}` `{build_dir}` `{test_executable}` `{gtest_filter}` `{test_module_name}` `{develop_module_option}` `{test_module_option}` `{artifact_dir}` `{gtest_xml_path}`。

@@ -11,6 +11,7 @@ import time
 import uuid
 
 from ..harness.runner import HarnessRunner
+from ..execution.clang_format import describe_version_mismatch, resolve_clang_format
 from ..git.diff import commit_paths, create_pr, push_branch
 from ..git.repositories import cleanup_worktree_dependencies, prepare_worktree_dependencies
 from ..git.worktree import create_remote_worktree, normalize_repo_path, remove_worktree, run_git
@@ -144,6 +145,7 @@ def run_selected_tests_pr_job(ctx, job_id: str, selected_tests: list[dict[str, s
             verification_target_path,
             commit_rel_paths,
             emit,
+            config=ctx.config,
         )
         for rel_path in commit_rel_paths:
             source = _read_utf8_source(verification_target_path / rel_path)
@@ -749,12 +751,13 @@ def _restore_generated_tests(target_path: Path, snapshots: dict[str, str], emit)
         emit("info", f"Restored full generated test file in local worktree: {rel_path}")
 
 
-def _format_generated_tests(worktree: Path, target_path: Path, rel_paths: list[str], emit) -> None:
+def _format_generated_tests(worktree: Path, target_path: Path, rel_paths: list[str], emit, *, config) -> None:
     if not rel_paths:
         return
-    clang_format = shutil.which("clang-format")
-    if clang_format is None:
-        raise RuntimeError("clang-format was not found on PATH; cannot prepare format-clean skip PR.")
+    resolved = resolve_clang_format(config)
+    if not resolved.matches_gme:
+        emit("warn", describe_version_mismatch(resolved))
+    clang_format = resolved.path
 
     style_file = worktree / ".clang-format"
     style = f"file:{style_file}" if style_file.exists() else "file"
